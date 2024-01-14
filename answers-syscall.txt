@@ -1,6 +1,15 @@
 usertrap
-7(SYS_exec), the number of system call that is called
+
+7(SYS_exec)
+the number of system call that is called
+
 usermode
-lw	a3,0(zero) register:a3
-address 0 is not mapped in the dernel address space. scause showed "load page fault"
-name: initcode, pid: 1
+
+lw	a3,0(zero)
+register:a3
+
+address 0 is not mapped in the dernel address space.
+scause showed "load page fault"
+
+name: initcode
+pid: 1
