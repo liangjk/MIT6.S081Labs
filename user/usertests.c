@@ -1018,7 +1018,7 @@ forkforkfork(char *s)
     exit(0);
   }
 
-  sleep(20); // two seconds
+  sleep(200); // two seconds
   close(open("stopforking", O_CREATE|O_RDWR));
   wait(0);
   sleep(10); // one second
