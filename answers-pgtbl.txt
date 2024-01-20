@@ -1,0 +1,3 @@
+fstat
+
+We can map a read-only page that stores file status struct stat. When calling fstat, we can directly write the file status to the stat struct in the shared page. So that we can save the time of copying memory from kernel to userspace. But it will still need kernel crossing to lock the inode and get the file status.

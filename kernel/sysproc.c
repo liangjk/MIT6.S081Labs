@@ -75,6 +75,32 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  int num;
+  uint64 va, retaddr;
+  uint32 result = 0;
+  argaddr(0, &va);
+  argint(1, &num);
+  argaddr(2, &retaddr);
+  if (num > 32)
+    return -1;
+  pagetable_t pgtable = myproc()->pagetable;
+  for (int i = 0; i < num; ++i)
+  {
+    if (va >= MAXVA)
+      return -2;
+    pte_t *pteaddr;
+    if ((pteaddr = walk(pgtable, va, 0)) == 0)
+      return -2;
+    if (!(*pteaddr & PTE_V) || (*pteaddr & (PTE_R | PTE_W | PTE_X)) == 0)
+      return -2;
+    if (*pteaddr & PTE_A)
+    {
+      result |= (1 << i);
+      *pteaddr ^= (PTE_A);
+    }
+    va += PGSIZE;
+  }
+  copyout(pgtable, retaddr, (char *)&result, sizeof result);
   return 0;
 }
 #endif
