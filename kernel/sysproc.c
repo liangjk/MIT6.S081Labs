@@ -95,8 +95,8 @@ sys_pgaccess(void)
       return -2;
     if (*pteaddr & PTE_A)
     {
-      result |= (1 << i);
-      *pteaddr ^= (PTE_A);
+      result |= 1 << i;
+      *pteaddr ^= PTE_A;
     }
     va += PGSIZE;
   }
