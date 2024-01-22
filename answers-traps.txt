@@ -1,0 +1,13 @@
+a0,a1,a2,etc. contain arguments to functions. Specifically, a2 holds 13 in main's call to printf.
+
+The function call f and g locate at 0x45b1. The compiler inline the functions and directly load f(8)+1=12 to a1.
+
+Function printf locates at 0x642.
+
+The value of ra should be 0x38 which is the address of next instruction of jalr.
+
+The output is "HE110 World".
+
+If it is big-endian, we should set i=0x726c6400. And we don't need to change 57616.
+
+It will print out the decimal number of whatever it is in the register a2. Because we didn't pass the value to a2 when we call the function, but printf will still fetch the value that is currently in a2 as the parameter.
