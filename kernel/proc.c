@@ -18,7 +18,6 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
-extern char etext[];
 extern char trampoline[]; // trampoline.S
 
 extern pagetable_t kernel_pagetable;
@@ -110,22 +109,14 @@ pagetable_t proc_kpagetable(void)
   pagetable_t kpagetable = (pagetable_t)kalloc();
   if (kpagetable == 0)
     return 0;
-  memset(kpagetable, 0, PGSIZE);
+  kpagetable[0] = 0;
+  for (int i = 1; i < 512; ++i)
+    kpagetable[i] = kernel_pagetable[i];
 
   kvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
   kvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
   kvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
-  kvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X);
-  kvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext, PTE_R | PTE_W);
-  kvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
-  struct proc *pi;
 
-  for (pi = proc; pi < &proc[NPROC]; pi++)
-  {
-    uint64 va = KSTACK((int)(pi - proc));
-    uint64 pa = PTE2PA(*walk(kernel_pagetable, va, 0));
-    kvmmap(kpagetable, va, pa, PGSIZE, PTE_R | PTE_W);
-  }
   return kpagetable;
 }
 

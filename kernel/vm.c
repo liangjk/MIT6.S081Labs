@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -200,6 +202,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
 void alignpagetable(pagetable_t kpagetable, pagetable_t upagetable, uint64 oldsz, uint64 newsz)
 {
+  if (newsz > PLIC)
+    panic("alignpagetable: too large size");
+
   oldsz = PGROUNDUP(oldsz);
   newsz = PGROUNDUP(newsz);
   if (newsz > oldsz)
@@ -321,16 +326,14 @@ freewalk(pagetable_t pagetable)
 
 void freekpt(pagetable_t pagetable)
 {
+  pagetable_t level1 = (pagetable_t)PTE2PA(pagetable[0]);
   for (int i = 0; i < 512; i++)
   {
-    pte_t pte = pagetable[i];
-    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
-    {
-      uint64 child = PTE2PA(pte);
-      freekpt((pagetable_t)child);
-      pagetable[i] = 0;
-    }
+    pte_t level2 = level1[i];
+    if (level2 & PTE_V)
+      kfree((void *)PTE2PA(level2));
   }
+  kfree((void *)level1);
   kfree((void *)pagetable);
 }
 
@@ -469,19 +472,11 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   //   srcva = va0 + PGSIZE;
   // }
   // return 0;
-  while (len > 0)
-  {
-    uint64 src = PGROUNDDOWN(srcva);
-    if (walkaddr(pagetable, src) == 0)
-      return -1;
-    uint64 n = PGSIZE - (srcva - src);
-    if (n > len)
-      n = len;
-    memmove(dst, (void *)srcva, n);
-    len -= n;
-    dst += n;
-    srcva += n;
-  }
+
+  struct proc *p = myproc();
+  if (srcva >= p->sz || srcva + len >= p->sz || srcva + len < srcva)
+    return -1;
+  memmove(dst, (void *)srcva, len);
   return 0;
 }
 
@@ -523,28 +518,19 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   // }
 
   int got_null = 0;
-  while (got_null == 0 && max > 0)
+  struct proc *p = myproc();
+  while (max > 0 && srcva < p->sz)
   {
-    uint64 src = PGROUNDDOWN(srcva);
-    if (walkaddr(pagetable, src) == 0)
-      return -1;
-    uint64 n = PGSIZE - (srcva - src);
-    if (n > max)
-      n = max;
-    while (n > 0)
+    char *p = (char *)srcva;
+    *dst = *p;
+    if (*p == '\0')
     {
-      char *p = (char *)srcva;
-      *dst = *p;
-      if (*p == '\0')
-      {
-        got_null = 1;
-        break;
-      }
-      --n;
-      --max;
-      ++srcva;
-      ++dst;
+      got_null = 1;
+      break;
     }
+    ++srcva;
+    ++dst;
+    --max;
   }
   if(got_null){
     return 0;
