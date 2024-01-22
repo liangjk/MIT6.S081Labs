@@ -174,7 +174,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
-void uvmunmap(pagetable_t kpagetable, pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+void
+uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
@@ -194,8 +195,6 @@ void uvmunmap(pagetable_t kpagetable, pagetable_t pagetable, uint64 va, uint64 n
       kfree((void*)pa);
     }
     *pte = 0;
-    if (kpagetable != 0 && (pte = walk(kpagetable, a, 0)) != 0)
-      *pte = 0;
   }
 }
 
@@ -215,7 +214,8 @@ uvmcreate()
 // Load the user initcode into address 0 of pagetable,
 // for the very first process.
 // sz must be less than a page.
-void uvmfirst(pagetable_t kpagetable, pagetable_t pagetable, uchar *src, uint sz)
+void
+uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
 {
   char *mem;
 
@@ -224,20 +224,16 @@ void uvmfirst(pagetable_t kpagetable, pagetable_t pagetable, uchar *src, uint sz
   mem = kalloc();
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
-  mappages(kpagetable, 0, PGSIZE, (uint64)mem, PTE_W | PTE_R | PTE_X);
   memmove(mem, src, sz);
 }
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 uint64
-uvmalloc(pagetable_t kpagetable, pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
+uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
   char *mem;
   uint64 a;
-
-  if (newsz > PLIC)
-    return 0;
 
   if(newsz < oldsz)
     return oldsz;
@@ -246,14 +242,13 @@ uvmalloc(pagetable_t kpagetable, pagetable_t pagetable, uint64 oldsz, uint64 new
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
-      uvmdealloc(kpagetable, pagetable, a, oldsz);
+      uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
     memset(mem, 0, PGSIZE);
-    if (mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_U | xperm) != 0 || mappages(kpagetable, a, PGSIZE, (uint64)mem, PTE_R | xperm) != 0)
-    {
+    if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
       kfree(mem);
-      uvmdealloc(kpagetable, pagetable, a, oldsz);
+      uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
   }
@@ -265,14 +260,14 @@ uvmalloc(pagetable_t kpagetable, pagetable_t pagetable, uint64 oldsz, uint64 new
 // need to be less than oldsz.  oldsz can be larger than the actual
 // process size.  Returns the new process size.
 uint64
-uvmdealloc(pagetable_t kpagetable, pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   if(newsz >= oldsz)
     return oldsz;
 
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
-    uvmunmap(kpagetable, pagetable, PGROUNDUP(newsz), npages, 1);
+    uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
 
   return newsz;
@@ -296,21 +291,6 @@ freewalk(pagetable_t pagetable)
     }
   }
   kfree((void*)pagetable);
-}
-
-void freekpt(pagetable_t pagetable)
-{
-  for (int i = 0; i < 512; i++)
-  {
-    pte_t pte = pagetable[i];
-    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
-    {
-      uint64 child = PTE2PA(pte);
-      freekpt((pagetable_t)child);
-      pagetable[i] = 0;
-    }
-  }
-  kfree((void *)pagetable);
 }
 
 void vmprintlvl(pagetable_t pagetable, int level)
@@ -338,10 +318,11 @@ void vmprint(pagetable_t pagetable)
 
 // Free user memory pages,
 // then free page-table pages.
-void uvmfree(pagetable_t pagetable, uint64 sz)
+void
+uvmfree(pagetable_t pagetable, uint64 sz)
 {
   if(sz > 0)
-    uvmunmap(0, pagetable, 0, PGROUNDUP(sz) / PGSIZE, 1);
+    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
 }
 
@@ -351,7 +332,8 @@ void uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
-int uvmcopy(pagetable_t knew, pagetable_t old, pagetable_t new, uint64 sz)
+int
+uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
@@ -368,8 +350,7 @@ int uvmcopy(pagetable_t knew, pagetable_t old, pagetable_t new, uint64 sz)
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
-    if (mappages(new, i, PGSIZE, (uint64)mem, flags) != 0 || mappages(knew, i, PGSIZE, (uint64)mem, flags & ~PTE_U) != 0)
-    {
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
       goto err;
     }
@@ -377,8 +358,8 @@ int uvmcopy(pagetable_t knew, pagetable_t old, pagetable_t new, uint64 sz)
   return 0;
 
  err:
-   uvmunmap(knew, new, 0, i / PGSIZE, 1);
-   return -1;
+  uvmunmap(new, 0, i / PGSIZE, 1);
+  return -1;
 }
 
 // mark a PTE invalid for user access.
