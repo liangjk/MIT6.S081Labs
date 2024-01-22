@@ -198,6 +198,20 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   }
 }
 
+void alignpagetable(pagetable_t kpagetable, pagetable_t upagetable)
+{
+  for (uint64 va = 0; va < PLIC; va += PGSIZE)
+  {
+    pte_t *kpte = walk(kpagetable, va, 0);
+    pte_t *upte = walk(upagetable, va, 0);
+    if (kpte == 0 && upte == 0)
+      break;
+    if (kpte == 0)
+      kpte = walk(kpagetable, va, 1);
+    *kpte = *upte & ~PTE_U;
+  }
+}
+
 // create an empty user page table.
 // returns 0 if out of memory.
 pagetable_t
@@ -234,6 +248,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
   char *mem;
   uint64 a;
+
+  if (newsz > PLIC)
+    return 0;
 
   if(newsz < oldsz)
     return oldsz;
@@ -291,6 +308,21 @@ freewalk(pagetable_t pagetable)
     }
   }
   kfree((void*)pagetable);
+}
+
+void freekpt(pagetable_t pagetable)
+{
+  for (int i = 0; i < 512; i++)
+  {
+    pte_t pte = pagetable[i];
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0)
+    {
+      uint64 child = PTE2PA(pte);
+      freekpt((pagetable_t)child);
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void *)pagetable);
 }
 
 void vmprintlvl(pagetable_t pagetable, int level)
@@ -411,21 +443,35 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
+  // uint64 n, va0, pa0;
 
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+  // while(len > 0){
+  //   va0 = PGROUNDDOWN(srcva);
+  //   pa0 = walkaddr(pagetable, va0);
+  //   if(pa0 == 0)
+  //     return -1;
+  //   n = PGSIZE - (srcva - va0);
+  //   if(n > len)
+  //     n = len;
+  //   memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+
+  //   len -= n;
+  //   dst += n;
+  //   srcva = va0 + PGSIZE;
+  // }
+  // return 0;
+  while (len > 0)
+  {
+    uint64 src = PGROUNDDOWN(srcva);
+    if (walkaddr(pagetable, src) == 0)
       return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
+    uint64 n = PGSIZE - (srcva - src);
+    if (n > len)
       n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
+    memmove(dst, (void *)srcva, n);
     len -= n;
     dst += n;
-    srcva = va0 + PGSIZE;
+    srcva += n;
   }
   return 0;
 }
@@ -437,34 +483,59 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
+  // uint64 n, va0, pa0;
+  // int got_null = 0;
+
+  // while(got_null == 0 && max > 0){
+  //   va0 = PGROUNDDOWN(srcva);
+  //   pa0 = walkaddr(pagetable, va0);
+  //   if(pa0 == 0)
+  //     return -1;
+  //   n = PGSIZE - (srcva - va0);
+  //   if(n > max)
+  //     n = max;
+
+  //   char *p = (char *) (pa0 + (srcva - va0));
+  //   while(n > 0){
+  //     if(*p == '\0'){
+  //       *dst = '\0';
+  //       got_null = 1;
+  //       break;
+  //     } else {
+  //       *dst = *p;
+  //     }
+  //     --n;
+  //     --max;
+  //     p++;
+  //     dst++;
+  //   }
+
+  //   srcva = va0 + PGSIZE;
+  // }
+
   int got_null = 0;
-
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+  while (got_null == 0 && max > 0)
+  {
+    uint64 src = PGROUNDDOWN(srcva);
+    if (walkaddr(pagetable, src) == 0)
       return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
+    uint64 n = PGSIZE - (srcva - src);
+    if (n > max)
       n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
+    while (n > 0)
+    {
+      char *p = (char *)srcva;
+      *dst = *p;
+      if (*p == '\0')
+      {
         got_null = 1;
         break;
-      } else {
-        *dst = *p;
       }
       --n;
       --max;
-      p++;
-      dst++;
+      ++srcva;
+      ++dst;
     }
-
-    srcva = va0 + PGSIZE;
   }
   if(got_null){
     return 0;

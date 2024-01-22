@@ -18,7 +18,10 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
+extern char etext[];
 extern char trampoline[]; // trampoline.S
+
+extern pagetable_t kernel_pagetable;
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -102,6 +105,30 @@ allocpid()
   return pid;
 }
 
+pagetable_t proc_kpagetable(void)
+{
+  pagetable_t kpagetable = (pagetable_t)kalloc();
+  if (kpagetable == 0)
+    return 0;
+  memset(kpagetable, 0, PGSIZE);
+
+  kvmmap(kpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  kvmmap(kpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  kvmmap(kpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  kvmmap(kpagetable, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X);
+  kvmmap(kpagetable, (uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+  kvmmap(kpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  struct proc *pi;
+
+  for (pi = proc; pi < &proc[NPROC]; pi++)
+  {
+    uint64 va = KSTACK((int)(pi - proc));
+    uint64 pa = PTE2PA(*walk(kernel_pagetable, va, 0));
+    kvmmap(kpagetable, va, pa, PGSIZE, PTE_R | PTE_W);
+  }
+  return kpagetable;
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -147,6 +174,8 @@ found:
     return 0;
   }
 
+  p->kpagetable = proc_kpagetable();
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -170,6 +199,9 @@ freeproc(struct proc *p)
   p->usyscall = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if (p->kpagetable)
+    freekpt(p->kpagetable);
+  p->kpagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -259,6 +291,7 @@ userinit(void)
   // and data into it.
   uvmfirst(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  alignpagetable(p->kpagetable, p->pagetable);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -289,6 +322,7 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+  alignpagetable(p->kpagetable, p->pagetable);
   return 0;
 }
 
@@ -313,6 +347,7 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+  alignpagetable(np->kpagetable, np->pagetable);
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
@@ -482,11 +517,17 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        sfence_vma();
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+        sfence_vma();
+        w_satp(MAKE_SATP(kernel_pagetable));
+        sfence_vma();
       }
       release(&p->lock);
     }
