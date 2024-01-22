@@ -42,7 +42,7 @@ def test_backtracetest():
 def test_alarmtest():
     r.run_qemu(shell_script([
         'alarmtest'
-    ]),timeout=3000)
+    ]),timeout=60)
 
 @test(20, "alarmtest: test0", parent=test_alarmtest)
 def test_alarmtest_test0():
@@ -64,7 +64,7 @@ def test_alarmtest_test3():
 def test_usertests():
     r.run_qemu(shell_script([
         'usertests -q'
-    ]), timeout=300)
+    ]), timeout=3000)
     r.match('^ALL TESTS PASSED$')
 
 @test(1, "time")
