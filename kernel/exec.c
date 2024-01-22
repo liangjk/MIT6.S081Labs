@@ -123,8 +123,8 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
-  alignpagetable(p->kpagetable, pagetable);
   p->sz = sz;
+  alignpagetable(p->kpagetable, pagetable, 0, p->sz);
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);

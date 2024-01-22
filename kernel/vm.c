@@ -198,18 +198,27 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   }
 }
 
-void alignpagetable(pagetable_t kpagetable, pagetable_t upagetable)
+void alignpagetable(pagetable_t kpagetable, pagetable_t upagetable, uint64 oldsz, uint64 newsz)
 {
-  for (uint64 va = 0; va < PLIC; va += PGSIZE)
-  {
-    pte_t *kpte = walk(kpagetable, va, 0);
-    pte_t *upte = walk(upagetable, va, 0);
-    if (kpte == 0 && upte == 0)
-      break;
-    if (kpte == 0)
-      kpte = walk(kpagetable, va, 1);
-    *kpte = *upte & ~PTE_U;
-  }
+  oldsz = PGROUNDUP(oldsz);
+  newsz = PGROUNDUP(newsz);
+  if (newsz > oldsz)
+    for (uint64 va = oldsz; va < newsz; va += PGSIZE)
+    {
+      pte_t *kpte = walk(kpagetable, va, 1);
+      pte_t *upte = walk(upagetable, va, 0);
+      if (kpte == 0 || upte == 0)
+        panic("alignpagetable: expand");
+      *kpte = *upte & ~PTE_U;
+    }
+  else if (newsz < oldsz)
+    for (uint64 va = newsz; va < oldsz; va += PGSIZE)
+    {
+      pte_t *kpte = walk(kpagetable, va, 0);
+      if (kpte == 0)
+        panic("alignpagetable: shrink");
+      *kpte = 0;
+    }
 }
 
 // create an empty user page table.
