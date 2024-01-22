@@ -42,7 +42,7 @@ def test_backtracetest():
 def test_alarmtest():
     r.run_qemu(shell_script([
         'alarmtest'
-    ]))
+    ]),timeout=3000)
 
 @test(20, "alarmtest: test0", parent=test_alarmtest)
 def test_alarmtest_test0():
