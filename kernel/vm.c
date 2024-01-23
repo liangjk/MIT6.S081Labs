@@ -474,7 +474,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   // return 0;
 
   struct proc *p = myproc();
-  if (srcva >= p->sz || srcva + len >= p->sz || srcva + len < srcva)
+  if (srcva >= p->sz || srcva + len > p->sz || srcva + len < srcva)
     return -1;
   memmove(dst, (void *)srcva, len);
   return 0;
