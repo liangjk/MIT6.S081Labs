@@ -411,17 +411,25 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t *pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
     n = PGSIZE - (srcva - va0);
-    if(n > len)
+    if (n > len)
       n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
+    if (srcva >= myproc()->sz || srcva + n > myproc()->sz)
+      return -1;
+    pte = walk(pagetable, va0, 0);
+    if (pte != 0 && (*pte & PTE_V) != 0)
+    {
+      if ((*pte & (PTE_U | PTE_R)) != (PTE_U | PTE_R))
+        return -1;
+      pa0 = PTE2PA(*pte);
+      memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+    }
+    else
+      memset(dst, 0, n);
     len -= n;
     dst += n;
     srcva = va0 + PGSIZE;
@@ -438,12 +446,21 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
   uint64 n, va0, pa0;
   int got_null = 0;
+  pte_t *pte;
 
   while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if (srcva >= myproc()->sz)
       return -1;
+    va0 = PGROUNDDOWN(srcva);
+    pte = walk(pagetable, va0, 0);
+    if (pte == 0 || (*pte & PTE_V) == 0)
+    {
+      got_null = 1;
+      break;
+    }
+    if ((*pte & (PTE_U | PTE_R)) != (PTE_U | PTE_R))
+      return -1;
+    pa0 = PTE2PA(*pte);
     n = PGSIZE - (srcva - va0);
     if(n > max)
       n = max;

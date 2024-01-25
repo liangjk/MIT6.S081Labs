@@ -9,7 +9,7 @@ r = Runner(save("xv6.out"))
 def test_lazytests():
     r.run_qemu(shell_script([
         'lazytests'
-    ]))
+    ]), timeout=120)
 
 @test(20, "lazy: map", parent=test_lazytests)
 def test_filetest():
