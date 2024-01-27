@@ -341,6 +341,12 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if (npte == 0)
       goto err;
     uint64 flags = PTE_RSW0;
+    if ((*pte & flags) == 0)
+    {
+      if (*pte & PTE_W)
+        flags |= PTE_RSW1;
+      *pte = (*pte & ~PTE_W) | flags;
+    }
     if (*pte & PTE_W)
       flags |= PTE_RSW1;
     *pte = (*pte & ~PTE_W) | flags;
