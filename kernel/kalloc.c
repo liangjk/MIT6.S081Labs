@@ -77,11 +77,8 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  if (addpageref(pa, 0) > 1)
-  {
-    addpageref(pa, -1);
+  if (addpageref(pa, -1))
     return;
-  }
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -108,7 +105,10 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if (r)
+  {
     memset((char*)r, 5, PGSIZE); // fill with junk
+    addpageref((void *)r, 1);
+  }
   return (void*)r;
 }
