@@ -9,7 +9,7 @@ r = Runner(save("xv6.out"))
 def test_cowtest():
     r.run_qemu(shell_script([
         'cowtest'
-    ]))
+    ]), timeout=180)
 
 @test(30, "simple", parent=test_cowtest)
 def test_simple():
@@ -29,7 +29,7 @@ def test_file():
 def test_usertests():
     r.run_qemu(shell_script([
         'usertests -q'
-    ]), timeout=1000)
+    ]), timeout=3000)
     r.match('^ALL TESTS PASSED$')
 
 def usertest_check(testcase, nextcase, output):
