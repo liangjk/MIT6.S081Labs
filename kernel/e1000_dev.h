@@ -94,7 +94,7 @@
 #define E1000_TXD_CMD_RS     0x08 /* Report Status */
 
 /* Transmit Descriptor status definitions [E1000 3.3.3.2] */
-#define E1000_TXD_STAT_DD    0x00000001 /* Descriptor Done */
+#define E1000_TXD_STAT_DD 0x01 /* Descriptor Done */
 
 // [E1000 3.3.3]
 struct tx_desc
