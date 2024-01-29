@@ -1,0 +1,1 @@
+when two threads are executing insert at the same time, and they are inserting to the same bucket. Thread 1 insert an entry that points to the current head of this bucket, while thread 2 also insert an entry that points to the current head. No matter which new entry finally becomes the new head, the other entry will be missing.
