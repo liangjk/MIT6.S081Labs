@@ -28,7 +28,7 @@ char *pagebase;
 #define REFLOCK(pa) ((struct spinlock *)PGROUNDDOWN(pa))
 #define REFONPAGE(page, idx) (((char *)(page) + sizeof(struct spinlock)) + idx)
 
-char addpageref(void *pa, char c)
+char addpageref(void *pa, char c, int lockfree)
 {
   if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end || (uint64)pa >= PHYSTOP)
     panic("addpageref");
@@ -36,6 +36,8 @@ char addpageref(void *pa, char c)
   uint64 pgn = idx / REFPERPAGE;
   idx = idx % REFPERPAGE;
   char *refcnt = REFONPAGE(pagebase + pgn * PGSIZE, idx);
+  if (lockfree)
+    return *refcnt += c;
   acquire(REFLOCK((uint64)refcnt));
   char ret = *refcnt += c;
   release(REFLOCK((uint64)refcnt));
@@ -77,7 +79,7 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  if (addpageref(pa, -1))
+  if (addpageref(pa, -1, 0))
     return;
 
   // Fill with junk to catch dangling refs.
@@ -108,7 +110,7 @@ kalloc(void)
   if (r)
   {
     memset((char*)r, 5, PGSIZE); // fill with junk
-    addpageref((void *)r, 1);
+    addpageref((void *)r, 1, 1);
   }
   return (void*)r;
 }

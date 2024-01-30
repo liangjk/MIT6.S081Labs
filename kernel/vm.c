@@ -351,7 +351,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       flags |= PTE_RSW1;
     *pte = (*pte & ~PTE_W) | flags;
     *npte = *pte;
-    addpageref((void *)PTE2PA(*npte), 1);
+    addpageref((void *)PTE2PA(*npte), 1, 0);
   }
   return 0;
 
@@ -397,7 +397,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       if (*pte & PTE_RSW1)
       {
         void *pa = (void *)PTE2PA(*pte);
-        char refcnt = addpageref(pa, 0);
+        char refcnt = addpageref(pa, 0, 0);
         uint64 flags = (PTE_FLAGS(*pte) & ~PTE_RSW0 & ~PTE_RSW1) | PTE_W;
         if (refcnt > 1)
         {

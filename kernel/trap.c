@@ -75,7 +75,7 @@ usertrap(void)
     if (pte && (*pte & PTE_V) && (*pte & PTE_RSW1))
     {
       void *pa = (void *)PTE2PA(*pte);
-      char refcnt = addpageref(pa, 0);
+      char refcnt = addpageref(pa, 0, 0);
       uint64 flags = (PTE_FLAGS(*pte) & ~PTE_RSW0 & ~PTE_RSW1) | PTE_W;
       if (refcnt > 1)
       {
