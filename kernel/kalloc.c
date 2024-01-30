@@ -21,13 +21,24 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  for (int i = 0; i < NCPU; ++i)
+    initlock(&kmem[i].lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+}
+
+void kfreeoncpu(void *pa, int id)
+{
+  struct run *r = (struct run *)pa;
+
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
 }
 
 void
@@ -35,8 +46,14 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+  int id = 0;
+  for (; p + PGSIZE <= (char *)pa_end; p += PGSIZE)
+  {
+    kfreeoncpu(p, id);
+    ++id;
+    if (id >= NCPU)
+      id = 0;
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -46,20 +63,39 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
-  struct run *r;
-
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
-  r = (struct run*)pa;
+  push_off();
+  kfreeoncpu(pa, cpuid());
+  pop_off();
+}
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+void *kalloconcpu(int nid)
+{
+  struct run *r = 0;
+  int id = nid + 1;
+  if (id >= NCPU)
+    id = 0;
+  while (id != nid)
+  {
+    acquire(&kmem[id].lock);
+    if (kmem[id].freelist)
+    {
+      r = kmem[id].freelist;
+      kmem[id].freelist = r->next;
+    }
+    release(&kmem[id].lock);
+    if (r)
+      break;
+    ++id;
+    if (id >= NCPU)
+      id = 0;
+  }
+  return (void *)r;
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,11 +106,21 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  push_off();
+  int id = cpuid();
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
+  if (r)
+  {
+    kmem[id].freelist = r->next;
+    release(&kmem[id].lock);
+  }
+  else
+  {
+    release(&kmem[id].lock);
+    r = kalloconcpu(id);
+  }
+  pop_off();
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
