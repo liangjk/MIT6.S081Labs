@@ -101,6 +101,30 @@ struct buf *findfreebuf(int eid)
   return 0;
 }
 
+// Caller mush hold the lock
+struct buf *findinbucket(uint dev, uint blockno)
+{
+  int hashid = blockno % NBUCKET;
+  for (struct buf *b = bcache.bucket[hashid].head.next; b != &bcache.bucket[hashid].head; b = b->next)
+    if (b->dev == dev && b->blockno == blockno)
+    {
+      b->refcnt++;
+      return b;
+    }
+  for (struct buf *b = bcache.bucket[hashid].head.prev; b != &bcache.bucket[hashid].head; b = b->prev)
+  {
+    if (b->refcnt == 0)
+    {
+      b->dev = dev;
+      b->blockno = blockno;
+      b->valid = 0;
+      b->refcnt = 1;
+      return b;
+    }
+  }
+  return 0;
+}
+
 // Look through buffer cache for block on device dev.
 // If not found, allocate a buffer.
 // In either case, return locked buffer.
@@ -138,39 +162,26 @@ bget(uint dev, uint blockno)
 
   int hashid = blockno % NBUCKET;
   acquire(&bcache.bucket[hashid].lock);
-  for (struct buf *b = bcache.bucket[hashid].head.next; b != &bcache.bucket[hashid].head; b = b->next)
-    if(b->dev == dev && b->blockno == blockno){
-      b->refcnt++;
-      release(&bcache.bucket[hashid].lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
-  for (struct buf *b = bcache.bucket[hashid].head.prev; b != &bcache.bucket[hashid].head; b = b->prev)
-  {
-    if(b->refcnt == 0) {
-      b->dev = dev;
-      b->blockno = blockno;
-      b->valid = 0;
-      b->refcnt = 1;
-      release(&bcache.bucket[hashid].lock);
-      acquiresleep(&b->lock);
-      return b;
-    }
-  }
+  struct buf *b = findinbucket(dev, blockno);
   release(&bcache.bucket[hashid].lock);
-  struct buf *b = findfreebuf(hashid);
   if (b)
   {
-    b->dev = dev;
-    b->blockno = blockno;
-    b->valid = 0;
-    b->refcnt = 1;
-    acquire(&bcache.bucket[hashid].lock);
-    b->next = bcache.bucket[hashid].head.next;
-    b->prev = &bcache.bucket[hashid].head;
+    acquiresleep(&b->lock);
+    return b;
+  }
+  b = findfreebuf(hashid);
+  acquire(&bcache.bucket[hashid].lock);
+  if (b)
+  {
+    b->next = &bcache.bucket[hashid].head;
+    b->prev = bcache.bucket[hashid].head.prev;
     b->next->prev = b;
     b->prev->next = b;
-    release(&bcache.bucket[hashid].lock);
+  }
+  b = findinbucket(dev, blockno);
+  release(&bcache.bucket[hashid].lock);
+  if (b)
+  {
     acquiresleep(&b->lock);
     return b;
   }
