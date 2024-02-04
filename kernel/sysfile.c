@@ -301,6 +301,7 @@ create(char *path, short type, short major, short minor)
   return 0;
 }
 
+#define MAXSTACK 8
 uint64
 sys_open(void)
 {
@@ -333,6 +334,27 @@ sys_open(void)
       end_op();
       return -1;
     }
+  }
+
+  char target[MAXPATH];
+  int nstack = 0;
+  while (ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0)
+  {
+    if (ip->size >= MAXPATH)
+    {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    target[readi(ip, 0, (uint64)target, 0, ip->size)] = 0;
+    iunlockput(ip);
+    ++nstack;
+    if (nstack > MAXSTACK || (ip = namei(target)) == 0 || ip->type == T_DIR)
+    {
+      end_op();
+      return -1;
+    }
+    ilock(ip);
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -502,4 +524,23 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+
+  begin_op();
+  if (argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0 || (ip = create(path, T_SYMLINK, 0, 0)) == 0)
+  {
+    end_op();
+    return -1;
+  }
+  int tsz = strlen(target);
+  int sz = writei(ip, 0, (uint64)target, 0, tsz);
+  iunlockput(ip);
+  end_op();
+  return (tsz == sz) ? 0 : -1;
 }
