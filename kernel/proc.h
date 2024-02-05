@@ -81,6 +81,17 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define NOVMA 16
+struct vma
+{
+  int valid;
+  uint64 start;
+  uint64 len;
+  int prot, flags;
+  struct file *file;
+  long offset;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -104,4 +115,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  struct vma vmatable[NOVMA];
 };

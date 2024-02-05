@@ -507,11 +507,100 @@ sys_pipe(void)
 uint64
 sys_mmap(void)
 {
-  return (uint64)-1;
+  uint64 addr;
+  size_t len;
+  int prot, flags, fd;
+  off_t offset;
+
+  struct file *f;
+
+  argaddr(0, &addr);
+  argaddr(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argfd(4, &fd, &f);
+  argaddr(5, (uint64 *)&offset);
+
+  struct proc *p = myproc();
+
+  if (addr || f->type != FD_INODE)
+    return (uint64)-1;
+
+  addr = 0; // To be done
+  int i;
+  for (i = 0; i < NOVMA; ++i)
+    if (p->vmatable[i].valid == 0)
+    {
+      p->vmatable[i].valid = 1;
+      p->vmatable[i].start = addr;
+      p->vmatable[i].len = len;
+      p->vmatable[i].prot = prot;
+      p->vmatable[i].flags = flags;
+      p->vmatable[i].file = f;
+      p->vmatable[i].offset = offset;
+      ++f->ref;
+      break;
+    }
+
+  if (i == NOVMA)
+    return (uint64)-1;
+  return addr;
 }
 
 uint64
 sys_munmap(void)
 {
+  uint64 addr;
+  size_t len;
+  argaddr(0, &addr);
+  argaddr(1, &len);
+
+  if (addr % PGSIZE)
+  {
+    printf("munmap not aligned\n");
+    return (uint64)-1;
+  }
+
+  struct proc *p = myproc();
+
+  int i;
+  for (i = 0; i < NOVMA; ++i)
+  {
+    if (!p->vmatable[i].valid)
+      continue;
+    if (addr == p->vmatable[i].start)
+    {
+      if (p->vmatable[i].len >= len)
+      {
+        if (p->vmatable[i].flags == MAP_SHARED && (p->vmatable[i].prot | PROT_WRITE))
+          writeback(p->vmatable[i].start, p->vmatable[i].len, p->vmatable[i].file, p->vmatable[i].offset);
+        p->vmatable[i].valid = 0;
+        fileclose(p->vmatable[i].file);
+        break;
+      }
+      else if (len % PGSIZE == 0)
+      {
+        if (p->vmatable[i].flags == MAP_SHARED && (p->vmatable[i].prot | PROT_WRITE))
+          writeback(p->vmatable[i].start, len, p->vmatable[i].file, p->vmatable[i].offset);
+        p->vmatable[i].start += len;
+        p->vmatable[i].len -= len;
+        p->vmatable[i].offset += len;
+        break;
+      }
+      printf("partial munmap new start not aligned\n");
+      i = NOVMA;
+      break;
+    }
+    if (addr > p->vmatable[i].start && addr + len >= p->vmatable[i].start + p->vmatable[i].len)
+    {
+      if (p->vmatable[i].flags == MAP_SHARED && (p->vmatable[i].prot | PROT_WRITE))
+        writeback(addr, len, p->vmatable[i].file, p->vmatable[i].offset + (addr - p->vmatable[i].start));
+      p->vmatable[i].len = addr - p->vmatable[i].start;
+      break;
+    }
+  }
+
+  if (i == NOVMA)
+    return (uint64)-1;
   return 0;
 }

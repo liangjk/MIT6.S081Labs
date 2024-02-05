@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,7 +71,49 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  }
+  else if (r_scause() == 0xc || r_scause() == 0xd)
+  {
+    uint64 addr = PGROUNDDOWN(r_stval());
+    if (addr >= MAXVA || walk(p->pagetable, addr, 0))
+      setkilled(p);
+    else
+    {
+      int i;
+      for (i = 0; i < NOVMA; ++i)
+      {
+        if (!p->vmatable[i].valid)
+          continue;
+        if (p->vmatable[i].start > addr || addr >= p->vmatable[i].start + p->vmatable[i].len)
+          continue;
+        uint64 ka = (uint64)kalloc();
+        if (ka == 0)
+        {
+          i = NOVMA;
+          break;
+        }
+        int perm = PTE_R;
+        if (p->vmatable[i].prot | PROT_WRITE)
+          perm |= PTE_W;
+        if (mappages(p->pagetable, addr, PGSIZE, ka, perm) != 0)
+        {
+          kfree((void *)ka);
+          i = NOVMA;
+          break;
+        }
+        if (p->vmatable[i].file->type != FD_INODE)
+          panic("trap: mmap not a file");
+        ilock(p->vmatable[i].file->ip);
+        readi(p->vmatable[i].file->ip, 1, addr, p->vmatable[i].offset + (addr - p->vmatable[i].start), PGSIZE);
+        iunlock(p->vmatable[i].file->ip);
+        break;
+      }
+      if (i == NOVMA)
+        setkilled(p);
+    }
+  }
+  else
+  {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     setkilled(p);

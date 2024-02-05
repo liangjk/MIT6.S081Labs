@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -308,6 +312,13 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  for (i = 0; i < NOVMA; i++)
+    if (p->vmatable[i].valid)
+    {
+      np->vmatable[i] = p->vmatable[i];
+      ++np->vmatable[i].file->ref;
+    }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -359,6 +370,15 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
+
+  for (int vma = 0; vma < NOVMA; ++vma)
+    if (p->vmatable[vma].valid)
+    {
+      if (p->vmatable[vma].flags == MAP_SHARED && (p->vmatable[vma].prot | PROT_WRITE))
+        writeback(p->vmatable[vma].start, p->vmatable[vma].len, p->vmatable[vma].file, p->vmatable[vma].offset);
+      p->vmatable[vma].valid = 0;
+      fileclose(p->vmatable[vma].file);
+    }
 
   begin_op();
   iput(p->cwd);
@@ -684,5 +704,21 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+void writeback(uint64 start, uint64 len, struct file *f, off_t offset)
+{
+  struct proc *p = myproc();
+  for (uint64 va = start; va < start + len; va += PGSIZE)
+  {
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if (pte == 0 || (*pte & PTE_D) == 0)
+      continue;
+    begin_op();
+    ilock(f->ip);
+    writei(f->ip, 0, PTE2PA(*pte), offset + (va - start), PGSIZE);
+    iunlock(f->ip);
+    end_op();
   }
 }
