@@ -435,7 +435,10 @@ bmap(struct inode *ip, uint bn)
     {
       addr = balloc(ip->dev);
       if (addr == 0)
+      {
+        brelse(bp);
         return 0;
+      }
       a[bn1] = addr;
       log_write(bp);
     }
@@ -447,7 +450,10 @@ bmap(struct inode *ip, uint bn)
     {
       addr = balloc(ip->dev);
       if (addr == 0)
+      {
+        brelse(bp);
         return 0;
+      }
       a[bn2] = addr;
       log_write(bp);
     }
@@ -498,9 +504,13 @@ itrunc(struct inode *ip)
         for (k = 0; k < NINDIRECT; k++)
           if (b[k])
             bfree(ip->dev, b[k]);
+          else
+            break;
         brelse(bpd);
         bfree(ip->dev, a[j]);
       }
+      else
+        break;
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT + 1]);
     ip->addrs[NDIRECT + 1] = 0;
