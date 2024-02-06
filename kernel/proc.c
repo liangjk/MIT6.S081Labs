@@ -374,16 +374,9 @@ exit(int status)
   for (int vma = 0; vma < NOVMA; ++vma)
     if (p->vmatable[vma].valid)
     {
-      if (p->vmatable[vma].flags == MAP_SHARED && (p->vmatable[vma].prot | PROT_WRITE))
-        writeback(p->vmatable[vma].start, p->vmatable[vma].len, p->vmatable[vma].file, p->vmatable[vma].offset);
+      writeback(p->vmatable[vma].start, p->vmatable[vma].len, p->vmatable[vma].file, p->vmatable[vma].offset, p->vmatable[vma].flags);
       p->vmatable[vma].valid = 0;
       fileclose(p->vmatable[vma].file);
-      for (uint64 va = p->vmatable[vma].start; va < p->vmatable[vma].start + p->vmatable[vma].len; va += PGSIZE)
-      {
-        pte_t *pte = walk(p->pagetable, va, 0);
-        if (pte && (*pte & PTE_V))
-          uvmunmap(p->pagetable, va, 1, 1);
-      }
     }
 
   begin_op();
@@ -713,18 +706,23 @@ procdump(void)
   }
 }
 
-void writeback(uint64 start, uint64 len, struct file *f, off_t offset)
+void writeback(uint64 start, uint64 len, struct file *f, off_t offset, int flags)
 {
   struct proc *p = myproc();
   for (uint64 va = start; va < start + len; va += PGSIZE)
   {
     pte_t *pte = walk(p->pagetable, va, 0);
-    if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_D) == 0)
+    if (pte == 0 || (*pte & PTE_V) == 0)
       continue;
-    begin_op();
-    ilock(f->ip);
-    writei(f->ip, 0, PTE2PA(*pte), offset + (va - start), PGSIZE);
-    iunlock(f->ip);
-    end_op();
+    if ((*pte & PTE_D) && flags == MAP_SHARED)
+    {
+      begin_op();
+      ilock(f->ip);
+      writei(f->ip, 0, PTE2PA(*pte), offset + (va - start), PGSIZE);
+      iunlock(f->ip);
+      end_op();
+    }
+    kfree((void *)PTE2PA(*pte));
+    *pte = 0;
   }
 }
