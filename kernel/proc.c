@@ -714,7 +714,7 @@ void writeback(uint64 start, uint64 len, struct file *f, off_t offset, int flags
     pte_t *pte = walk(p->pagetable, va, 0);
     if (pte == 0 || (*pte & PTE_V) == 0)
       continue;
-    if ((*pte & PTE_D) && flags == MAP_SHARED)
+    if ((*pte & PTE_D) && flags == MAP_SHARED && f->writable)
     {
       begin_op();
       ilock(f->ip);
