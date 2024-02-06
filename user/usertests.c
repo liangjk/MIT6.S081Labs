@@ -1022,6 +1022,7 @@ forkforkfork(char *s)
   close(open("stopforking", O_CREATE|O_RDWR));
   wait(0);
   sleep(10); // one second
+  unlink("stopforking");
 }
 
 // regression test. does reparent() violate the parent-then-child
@@ -1511,6 +1512,8 @@ linkunlink(char *s)
       unlink("x");
     }
   }
+
+  unlink("x");
 
   if(pid)
     wait(0);
@@ -2328,6 +2331,7 @@ bigargtest(char *s)
     exit(1);
   }
   close(fd);
+  unlink("bigarg-ok");
 }
 
 // what happens when the file system runs out of blocks?
@@ -2541,6 +2545,7 @@ sbrklast(char *s)
   read(fd, p, 1);
   if(p[0] != 'x')
     exit(1);
+  unlink("x");
 }
 
 
