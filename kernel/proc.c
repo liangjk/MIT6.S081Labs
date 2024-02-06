@@ -378,6 +378,12 @@ exit(int status)
         writeback(p->vmatable[vma].start, p->vmatable[vma].len, p->vmatable[vma].file, p->vmatable[vma].offset);
       p->vmatable[vma].valid = 0;
       fileclose(p->vmatable[vma].file);
+      for (uint64 va = p->vmatable[vma].start; va < p->vmatable[vma].start + p->vmatable[vma].len; va += PGSIZE)
+      {
+        pte_t *pte = walk(p->pagetable, va, 0);
+        if (pte && (*pte & PTE_V))
+          uvmunmap(p->pagetable, va, 1, 1);
+      }
     }
 
   begin_op();
@@ -713,7 +719,7 @@ void writeback(uint64 start, uint64 len, struct file *f, off_t offset)
   for (uint64 va = start; va < start + len; va += PGSIZE)
   {
     pte_t *pte = walk(p->pagetable, va, 0);
-    if (pte == 0 || (*pte & PTE_D) == 0)
+    if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_D) == 0)
       continue;
     begin_op();
     ilock(f->ip);

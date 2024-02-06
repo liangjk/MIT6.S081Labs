@@ -72,44 +72,53 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   }
-  else if (r_scause() == 0xc || r_scause() == 0xd)
+  else if (r_scause() == 13 || r_scause() == 15)
   {
     uint64 addr = PGROUNDDOWN(r_stval());
-    if (addr >= MAXVA || walk(p->pagetable, addr, 0))
+    if (addr >= MAXVA)
       setkilled(p);
     else
     {
-      int i;
-      for (i = 0; i < NOVMA; ++i)
-      {
-        if (!p->vmatable[i].valid)
-          continue;
-        if (p->vmatable[i].start > addr || addr >= p->vmatable[i].start + p->vmatable[i].len)
-          continue;
-        uint64 ka = (uint64)kalloc();
-        if (ka == 0)
-        {
-          i = NOVMA;
-          break;
-        }
-        int perm = PTE_R;
-        if (p->vmatable[i].prot | PROT_WRITE)
-          perm |= PTE_W;
-        if (mappages(p->pagetable, addr, PGSIZE, ka, perm) != 0)
-        {
-          kfree((void *)ka);
-          i = NOVMA;
-          break;
-        }
-        if (p->vmatable[i].file->type != FD_INODE)
-          panic("trap: mmap not a file");
-        ilock(p->vmatable[i].file->ip);
-        readi(p->vmatable[i].file->ip, 1, addr, p->vmatable[i].offset + (addr - p->vmatable[i].start), PGSIZE);
-        iunlock(p->vmatable[i].file->ip);
-        break;
-      }
-      if (i == NOVMA)
+      pte_t *pte = walk(p->pagetable, addr, 0);
+      if (pte && (*pte & PTE_V))
         setkilled(p);
+      else
+      {
+        int i;
+        for (i = 0; i < NOVMA; ++i)
+        {
+          if (!p->vmatable[i].valid)
+            continue;
+          if (p->vmatable[i].start > addr || addr >= p->vmatable[i].start + p->vmatable[i].len)
+            continue;
+          void *ka = kalloc();
+          if (ka == 0)
+          {
+            i = NOVMA;
+            break;
+          }
+          int perm = PTE_U;
+          if (p->vmatable[i].prot | PROT_READ)
+            perm |= PTE_R;
+          if (p->vmatable[i].prot | PROT_WRITE)
+            perm |= PTE_W;
+          if (mappages(p->pagetable, addr, PGSIZE, (uint64)ka, perm) != 0)
+          {
+            kfree(ka);
+            i = NOVMA;
+            break;
+          }
+          if (p->vmatable[i].file->type != FD_INODE)
+            panic("trap: mmap not a file");
+          memset(ka, 0, PGSIZE);
+          ilock(p->vmatable[i].file->ip);
+          readi(p->vmatable[i].file->ip, 1, addr, p->vmatable[i].offset + (addr - p->vmatable[i].start), PGSIZE);
+          iunlock(p->vmatable[i].file->ip);
+          break;
+        }
+        if (i == NOVMA)
+          setkilled(p);
+      }
     }
   }
   else

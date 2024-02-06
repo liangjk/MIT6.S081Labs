@@ -523,11 +523,14 @@ sys_mmap(void)
 
   struct proc *p = myproc();
 
-  if (addr || f->type != FD_INODE)
+  if (addr || f->type != FD_INODE || (f->writable == 0 && (prot & PROT_WRITE) && flags != MAP_PRIVATE) || (f->readable == 0 && (prot & PROT_READ)))
     return (uint64)-1;
 
-  addr = 0; // To be done
+  addr = MAXVA >> 1;
   int i;
+  for (i = 0; i < NOVMA; ++i)
+    if (p->vmatable[i].start + p->vmatable[i].len > addr)
+      addr = p->vmatable[i].start + p->vmatable[i].len;
   for (i = 0; i < NOVMA; ++i)
     if (p->vmatable[i].valid == 0)
     {
@@ -570,7 +573,7 @@ sys_munmap(void)
       continue;
     if (addr == p->vmatable[i].start)
     {
-      if (p->vmatable[i].len >= len)
+      if (p->vmatable[i].len <= len)
       {
         if (p->vmatable[i].flags == MAP_SHARED && (p->vmatable[i].prot | PROT_WRITE))
           writeback(p->vmatable[i].start, p->vmatable[i].len, p->vmatable[i].file, p->vmatable[i].offset);
@@ -602,5 +605,12 @@ sys_munmap(void)
 
   if (i == NOVMA)
     return (uint64)-1;
+
+  for (uint64 va = addr; va < addr + len; va += PGSIZE)
+  {
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if (pte && (*pte & PTE_V))
+      uvmunmap(p->pagetable, va, 1, 1);
+  }
   return 0;
 }
