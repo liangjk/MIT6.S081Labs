@@ -137,7 +137,7 @@ e1000_recv(void)
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
   struct mbuf *rx_packets = 0;
-  acquire(&e1000_lock);
+  // acquire(&e1000_lock);
   uint32 rx_idx = regs[E1000_RDT];
   if (rx_idx >= RX_RING_SIZE)
     panic("e1000 recv index");
@@ -154,7 +154,7 @@ e1000_recv(void)
     rx_next = (rx_idx + 1) % RX_RING_SIZE;
   }
   regs[E1000_RDT] = rx_idx;
-  release(&e1000_lock);
+  // release(&e1000_lock);
   while (rx_packets)
   {
     struct mbuf *pkt = rx_packets;
