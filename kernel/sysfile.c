@@ -527,10 +527,14 @@ sys_mmap(void)
     return (uint64)-1;
 
   addr = MAXVA >> 1;
+  if (p->sz > addr)
+    panic("process too large size");
   int i;
   for (i = 0; i < NOVMA; ++i)
     if (p->vmatable[i].start + p->vmatable[i].len > addr)
       addr = p->vmatable[i].start + p->vmatable[i].len;
+  if (addr + len > MAXVA)
+    return (uint64)-1;
   for (i = 0; i < NOVMA; ++i)
     if (p->vmatable[i].valid == 0)
     {
