@@ -19,7 +19,7 @@ static struct mbuf *rx_mbufs[RX_RING_SIZE];
 // remember where the e1000's registers live.
 static volatile uint32 *regs;
 
-struct spinlock e1000_lock;
+struct spinlock e1000_tx_lock, e1000_rx_lock;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -29,7 +29,8 @@ e1000_init(uint32 *xregs)
 {
   int i;
 
-  initlock(&e1000_lock, "e1000");
+  initlock(&e1000_tx_lock, "e1000 tx");
+  initlock(&e1000_rx_lock, "e1000 rx");
 
   regs = xregs;
 
@@ -102,13 +103,15 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
-  acquire(&e1000_lock);
+  if (m->len > DATA_MAX)
+    return -2;
+  acquire(&e1000_tx_lock);
   uint32 tx_idx = regs[E1000_TDT];
   if (tx_idx >= TX_RING_SIZE)
     panic("e1000 transmit index");
   if ((tx_ring[tx_idx].status & E1000_TXD_STAT_DD) == 0)
   {
-    release(&e1000_lock);
+    release(&e1000_tx_lock);
     return -1;
   }
   struct mbuf *tx_tofree = tx_mbufs[tx_idx];
@@ -117,11 +120,12 @@ e1000_transmit(struct mbuf *m)
   tx_ring[tx_idx].length = m->len;
   tx_ring[tx_idx].status = 0;
   tx_ring[tx_idx].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
-  tx_ring[tx_idx].css = 0;
-  tx_ring[tx_idx].cso = 0;
-  tx_ring[tx_idx].special = 0;
+  // tx_ring[tx_idx].css = 0;
+  // tx_ring[tx_idx].cso = 0;
+  // tx_ring[tx_idx].special = 0;
+  __sync_synchronize();
   regs[E1000_TDT] = (tx_idx + 1) % TX_RING_SIZE;
-  release(&e1000_lock);
+  release(&e1000_tx_lock);
   if (tx_tofree)
     mbuffree(tx_tofree);
   return 0;
@@ -137,8 +141,9 @@ e1000_recv(void)
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
   struct mbuf *rx_packets = 0;
-  // acquire(&e1000_lock);
+  acquire(&e1000_rx_lock);
   uint32 rx_idx = regs[E1000_RDT];
+  __sync_synchronize();
   if (rx_idx >= RX_RING_SIZE)
     panic("e1000 recv index");
   uint32 rx_next = (rx_idx + 1) % RX_RING_SIZE;
@@ -148,13 +153,16 @@ e1000_recv(void)
     rx_packets = rx_mbufs[rx_next];
     rx_packets->len = rx_ring[rx_next].length;
     rx_mbufs[rx_next] = mbufalloc(0);
+    if (rx_mbufs[rx_next] == 0)
+      panic("e1000 recv mbufalloc");
     memset(&rx_ring[rx_next], 0, sizeof(rx_ring[rx_next]));
     rx_ring[rx_next].addr = (uint64)rx_mbufs[rx_next]->head;
     rx_idx = rx_next;
     rx_next = (rx_idx + 1) % RX_RING_SIZE;
   }
+  __sync_synchronize();
   regs[E1000_RDT] = rx_idx;
-  // release(&e1000_lock);
+  release(&e1000_rx_lock);
   while (rx_packets)
   {
     struct mbuf *pkt = rx_packets;
